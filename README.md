@@ -31,6 +31,8 @@
 #### 帧缓冲区：实现一个帧缓冲区，用于存储渲染结果。
 
 
-![1732628977018](https://github.com/user-attachments/assets/6b72ac27-d074-4738-9c2e-28ec93057316)![image](https://github.com/user-attachments/assets/67f77408-3953-4a2f-9b15-de84a9184d65)
+![1732628977018](https://github.com/user-attachments/assets/6b72ac27-d074-4738-9c2e-28ec93057316)
 
+
+![Uploading aca6574bc114fa3f61ff30a88b97f2e.png…]()
 
