@@ -79,7 +79,8 @@ namespace RGS {
 		m_Uniforms.CamerasPos = m_Camera.Pos;
 		m_Uniforms.Model = model;
 		m_Uniforms.ModelNormalToWorld = Mat4Identity();
-		m_Uniforms.Shininess *= std::pow(2, time * 2.0f);
+		//光照随着每一帧发生变化
+		//m_Uniforms.Shininess *= std::pow(2, time * 2.0f);
 		if (m_Uniforms.Shininess > 256.0f) {
 			m_Uniforms.Shininess = 2.0f;
 		}

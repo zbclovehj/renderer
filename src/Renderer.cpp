@@ -93,6 +93,7 @@ namespace RGS {
         maxX = Clamp(maxX, 0.0f, (float)(width - 1));
         minY = Clamp(minY, 0.0f, (float)(height - 1));
         maxY = Clamp(maxY, 0.0f, (float)(height - 1));
+
         //在渲染管线中，通过计算三角形的边界框可以有效地减少需要处理的像素数量，特别是在光栅化阶段，只有位于边界框内的像素才需要进一步处理。
         BoundingBox bBox;
         bBox.MinX = std::floor(minX);

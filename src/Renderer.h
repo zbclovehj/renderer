@@ -142,6 +142,35 @@ out.NdcPos.W：设置 NdcPos 的 W 分量。由于在NDC空间中，W 应该是1，这里通过取 Clip
 				outFloat[i] = v0[i] * weights[0] + v1[i] * weights[1] + v2[i] * weights[2];
 			}
 		}
+		template<typename varyings_t>
+		static bool ClipAgainstPlane(
+			const varyings_t(&inVaryings)[RGS_MAX_VARYINGS],
+			const Plane plane
+			)
+		{
+			
+			//输出的顶点，裁剪后顶点个数
+			int inVertexNum = 3;
+			for (int i = 0; i < inVertexNum; i++)
+			{
+				int prevIndex = (inVertexNum - 1 + i) % inVertexNum;
+				int curIndex = i;
+				const varyings_t& preVaryings = inVaryings[prevIndex];
+				const varyings_t& curVaryings = inVaryings[curIndex];
+				const bool prevInside = IsInsidePlane(preVaryings.ClipPos, plane);
+				const bool curInside = IsInsidePlane(curVaryings.ClipPos, plane);
+				//当前顶点与前一个顶点判断不一致的情况下，肯定有一个顶点是在平面外部，所以要通过插值的方式得到两个顶点之间的插值点，作为在平面外部的裁剪顶点
+				//如果当前顶点和前一个顶点在平面的不同侧，计算它们的交点，并使用线性插值来生成新的顶点数据。
+				if (curInside != prevInside) {//在不同侧时
+					float ratio = GetIntersectRatio(preVaryings.ClipPos, curVaryings.ClipPos, plane);
+					if (ratio > 0 && ratio < 1) {
+						return true;//有交点
+					}
+				}
+
+			}
+			return false;//没有交点
+		}
 		//用于裁剪不在平面视野内的顶点,得到裁剪后的顶点数据，由X, Y, Z的正负组成的六个平面
 		template<typename varyings_t>
 		static int ClipAgainstPlane(varyings_t(&outVaryings)[RGS_MAX_VARYINGS],
@@ -174,6 +203,38 @@ out.NdcPos.W：设置 NdcPos 的 W 分量。由于在NDC空间中，W 应该是1，这里通过取 Clip
 			}
 			ASSERT(outVertexNum <= RGS_MAX_VARYINGS);
 			return outVertexNum;
+		}
+		template<typename varyings_t>
+		static bool Clip(varyings_t(&varyings)[RGS_MAX_VARYINGS], int vertexN) {
+			//检查三个顶点是否在视锥体内。IsVertexVisible 基于顶点的裁剪空间位置（ClipPos）来判断顶点是否可见。
+			bool v0_Visible = IsVertexVisible(varyings[0].ClipPos);
+			bool v1_Visible = IsVertexVisible(varyings[1].ClipPos);
+			bool v2_Visible = IsVertexVisible(varyings[2].ClipPos);
+			//堵在视锥体之内则直接返回
+			if (v0_Visible && v1_Visible && v2_Visible) {
+				return true;
+			}
+			bool vertexNum = false;
+			//针对六个裁剪平面（ X, Y, Z的正负方向）重复执行，确保顶点数据完全在视锥体内。类似于天空盒在一个空间内，由X, Y, Z的正负组成
+			varyings_t varyings_[RGS_MAX_VARYINGS];
+			//Plane::POSITIVE_W 是一个关键的裁剪平面，用于确保所有顶点都处于一个可以安全进行透视投影的位置。
+			vertexNum = ClipAgainstPlane( varyings, Plane::POSITIVE_W);
+			if (vertexNum == true) return true;
+			vertexNum = ClipAgainstPlane(varyings,  Plane::POSITIVE_X);
+			if (vertexNum == true) return true;
+			vertexNum = ClipAgainstPlane(varyings, Plane::NEGATIVE_X);
+			if (vertexNum == true) return true;
+			vertexNum = ClipAgainstPlane(varyings, Plane::POSITIVE_Y);
+			if (vertexNum == true) return true;
+			vertexNum = ClipAgainstPlane( varyings, Plane::NEGATIVE_Y);
+			if (vertexNum == true) return true;
+			vertexNum = ClipAgainstPlane(varyings, Plane::POSITIVE_Z);
+			if (vertexNum == true) return true;
+			vertexNum = ClipAgainstPlane(varyings, Plane::NEGATIVE_Z);
+			if (vertexNum == true) return true;
+			//使用 memcpy 将临时数组 varyings_ 中的数据复制回原数组 varyings，更新顶点数据。
+			//如果当前顶点是至少有一个顶点在裁剪空间之内的，则要通过ClipAgainstPlane计算出所有的裁剪顶点，并将其输出，计算裁剪之后的顶点个数
+			return false;
 		}
 		//判断三角形面片的顶点在裁剪空间之内,并得到裁剪之后的顶点
 		template<typename varyings_t>
@@ -356,24 +417,42 @@ public:
 			{
 				program.VertexShader(varyings[i], triangle[i], uniforms);
 			}
-			//对坐标进行裁剪，得到裁剪空间中的可见顶点数量，和裁剪之后的顶点坐标
+			/*
 			int vertexNum = Clip(varyings);
-			//计算归一化设备坐标
 			CaculateNdcPos(varyings, vertexNum);
+			*/
+			//对坐标进行裁剪，得到裁剪空间中的可见顶点数量，和裁剪之后的顶点坐标,或者优化速度，直接判断是否有交点，在计算包围盒时优化速度
+			bool is_Rasterize = Clip(varyings,3);
+			//计算归一化设备坐标
+			CaculateNdcPos(varyings, 3);
 			int fWidth = framebuffer.GetWidth();
 			int fHeight = framebuffer.GetHeight();
 			//计算屏幕空间坐标，像素坐标，每个顶点在屏幕上对应的像素位置
-			CaculateFragPos(varyings, vertexNum, (float)fWidth, (float)fHeight);
+			CaculateFragPos(varyings, 3, (float)fWidth, (float)fHeight);
 			//得到裁剪之后的三角形对应的顶点属性（各种坐标系下的坐标），可能有两个三角形,裁剪之后的顶点个数可能是四个
 			//依次渲染裁剪空间到屏幕空间上的三角形，进行光栅化，将三角形的顶点转化为屏幕空间中的像素
 			//渲染屏幕空间的三角形
-			for (int i = 0; i < vertexNum - 2; ++i) {
-				varyings_t triVaryings[3];//三角形的三个顶点
+			/* Triangle Assembly & Rasterization */
+			/*
+			for (int i = 0; i < vertexNum - 2; i++)
+			{
+				varyings_t triVaryings[3];
 				triVaryings[0] = varyings[0];
 				triVaryings[1] = varyings[i + 1];
 				triVaryings[2] = varyings[i + 2];
-				RasterizeTriangle(framebuffer, program, triVaryings, uniforms);
+
+				RasterizeTriangle<vertex_t, uniforms_t, varyings_t, msaa>(framebuffer, *program, triVaryings, *uniforms);
 			}
+			*/
+			
+			varyings_t trivarying[3];
+			for (int i = 0; i < 3; i++)
+			{
+				trivarying[i] = varyings[i];
+			}
+			if(is_Rasterize)
+				RasterizeTriangle(framebuffer, program, trivarying, uniforms);
+			
 		}
 
 	};
